@@ -98,7 +98,7 @@ public class CliRunner {
         System.out.println("  reag_list                                                   - Показать список всех реагентов");
 
         System.out.println("\n ПАРТИИ:");
-        System.out.println("  batch <ID_Реагента> \"Этикетка\" <Кол-во> <G|ML> \"Место\" - Зарегистрировать новую партию");
+        System.out.println("  batch_add <ID_Реагента> \"Этикетка\" <Кол-во> <G|ML> \"Место\" - Зарегистрировать новую партию");
         System.out.println("  batch_list                                                   - Показать список всех партий");
         System.out.println("  batch_show <ID_Партии>                                       - Подробная информация о партии");
         System.out.println("  batch_update <ID_Партии> <Поле: label|location|status> \"Значение\" - Изменить данные о партии");
@@ -139,7 +139,6 @@ public class CliRunner {
     private void handleReagList(List<String> args) {
         String query = null;
         if (args.size() > 1) {
-            // Склеиваем все аргументы после команды "reag_list"
             query = String.join(" ", args.subList(1, args.size()));
         }
 
@@ -159,30 +158,41 @@ public class CliRunner {
     // ПАРТИИ
 
     private void handleBatchAdd(List<String> args) {
-        if (args.size() < 6) {
-            System.out.println("Пример: batch_add 1 \"Sigma-Aldrich банка\" 500 G \"Шкаф 1\"");
-            return;
+        Scanner scanner = new Scanner(System.in);
+
+        try {
+            System.out.print("ID Реагента: ");
+            long reagentId = Long.parseLong(scanner.nextLine().trim());
+
+            System.out.print("Этикетка: ");
+            String label = scanner.nextLine().trim();
+            // я хочу, чтобы при ошибочном вводе не сбрасывалась команда.
+            System.out.print("Количество: ");
+            double quantity = Double.parseDouble(scanner.nextLine().trim());
+
+            System.out.print("Единицы измерения (G или ML): ");
+            BatchUnit unit = BatchUnit.valueOf(scanner.nextLine().trim().toUpperCase());
+
+            System.out.print("Место хранения: ");
+            String location = scanner.nextLine().trim();
+
+            ReagentBatch batch = batchService.createBatch(reagentId, label, quantity, unit, location, null);
+            System.out.println("Партия добавлена на склад: [ID: " + batch.getId() + "] Этикетка: '" + batch.getLabel() + "'");
+
+        } catch (NumberFormatException e) {
+            System.out.println("Ошибка: Введено некорректное число для ID или количества.");
+        } catch (IllegalArgumentException e) {
+            System.out.println("Ошибка: Неверная единица измерения. Используйте G или ML.");
         }
-
-        long reagentId = Long.parseLong(args.get(1));
-        String label = args.get(2);
-        double quantity = Double.parseDouble(args.get(3));
-        BatchUnit unit = BatchUnit.valueOf(args.get(4).toUpperCase());
-        String location = args.get(5);
-
-        ReagentBatch batch = batchService.createBatch(reagentId, label, quantity, unit, location, null);
-        System.out.println("Партия добавлена на склад: [ID: " + batch.getId() + "] Этикетка: '" + batch.getLabel() + "'");
     }
 
     private void handleBatchList(List<String> args) {
         List<ReagentBatch> batches;
 
         if (args.size() > 1) {
-            // Если передан ID реагента
             long reagentId = Long.parseLong(args.get(1));
-            batches = batchService.listBatches(reagentId, false); // false = показывать все, включая архивные
+            batches = batchService.listBatches(reagentId, false);
         } else {
-            // Если ID не передан, показываем абсолютно все партии на складе
             batches = batchService.getAllBatches();
         }
 
@@ -218,30 +228,49 @@ public class CliRunner {
     }
 
     private void handleBatchUpdate(List<String> args) {
-        if (args.size() < 4) {
-            System.out.println("Пример: batch_update 1 location \"Холодильник 2\"");
-            System.out.println("Или: batch_update 1 expiresat 2024-12-31");
-            System.out.println("Доступные поля: label, location, status, expiresat");
-            return;
-        }
-        long batchId = Long.parseLong(args.get(1));
-        String field = args.get(2).toLowerCase(); // Приводим к нижнему регистру для надежности
-        String value = args.get(3);
+        Scanner scanner = new Scanner(System.in);
 
-        Instant parsedDate = null;
-
-        // Если обновляем дату окончания срока годности
-        if (field.equals("expiresat")) {
+        long batchId = 0;
+        while (true) {
+            System.out.print("ID Партии: ");
             try {
-                parsedDate = LocalDate.parse(value).atStartOfDay(ZoneId.systemDefault()).toInstant();
-            } catch (DateTimeParseException e) {
-                System.out.println("Ошибка: неверный формат даты. Используйте формат YYYY-MM-DD.");
-                return;
+                batchId = Long.parseLong(scanner.nextLine().trim());
+                break;
+            } catch (NumberFormatException e) {
+                System.out.println("Ошибка: Пожалуйста, введите корректное целое число.");
             }
         }
 
-        batchService.updateBatch(batchId, field, value, parsedDate);
-        System.out.println("Партия успешно обновлена.");
+        String field = "";
+        while (true) {
+            System.out.print("Какое поле обновить? (Доступны: label, location, status): ");
+            field = scanner.nextLine().trim().toLowerCase();
+            if (field.equals("label") || field.equals("location") || field.equals("status")) {
+                break;
+            }
+            System.out.println("Ошибка: Неизвестное поле. Введите label, location или status.");
+        }
+
+        String value = "";
+        while (true) {
+            if (field.equals("status")) {
+                System.out.print("Новый статус (ACTIVE или ARCHIVED): ");
+                value = scanner.nextLine().trim().toUpperCase();
+                if (value.equals("ACTIVE") || value.equals("ARCHIVED")) {
+                    break;
+                }
+                System.out.println("Ошибка: Статус может быть только ACTIVE или ARCHIVED.");
+            } else {
+                System.out.print("Новое значение: ");
+                value = scanner.nextLine().trim();
+                if (!value.isEmpty()) {
+                    break;
+                }
+                System.out.println("Ошибка: Значение не может быть пустым.");
+            }
+        }
+        batchService.updateBatch(batchId, field, value, null);
+        System.out.println("Данные партии #" + batchId + " успешно обновлены.");
     }
 
     private void handleBatchArchive(List<String> args) {
@@ -258,19 +287,33 @@ public class CliRunner {
     //ДВИЖЕНИЕ ОСТАТКОВ
 
     private void handleMove(List<String> args) {
-        if (args.size() < 4) {
-            System.out.println("Пример: move 1 OUT 50 \"Взвешивание для опыта\"");
-            System.out.println("Типы движений: IN (Приход), OUT (Расход), DISCARD (Списание)");
-            return;
-        }
-        long batchId = Long.parseLong(args.get(1));
-        StockMoveType type = StockMoveType.valueOf(args.get(2).toUpperCase());
-        double quantity = Double.parseDouble(args.get(3));
-        String reason = args.size() > 4 ? args.get(4) : "Без причины";
+        Scanner scanner = new Scanner(System.in);
 
-        StockMove move = moveService.makeMove(batchId, type, quantity, reason);
-        System.out.printf("Движение успешно записано! [Move ID: %d] Тип: %s, Кол-во: %.2f %s\n",
-                move.getId(), move.getType(), move.getQuantity(), move.getUnit());
+        try {
+            System.out.print("ID Партии: ");
+            long batchId = Long.parseLong(scanner.nextLine().trim());
+
+            System.out.print("Тип движения (IN, OUT, DISCARD): ");
+            StockMoveType type = StockMoveType.valueOf(scanner.nextLine().trim().toUpperCase());
+
+            System.out.print("Количество: ");
+            double quantity = Double.parseDouble(scanner.nextLine().trim());
+
+            System.out.print("Причина (необязательно, нажмите Enter для пропуска): ");
+            String reason = scanner.nextLine().trim();
+            if (reason.isEmpty()) {
+                reason = "Без причины";
+            }
+
+            StockMove move = moveService.makeMove(batchId, type, quantity, reason);
+            System.out.printf("Движение успешно записано! [Move ID: %d] Тип: %s, Кол-во: %.2f %s\n",
+                    move.getId(), move.getType(), move.getQuantity(), move.getUnit());
+
+        } catch (NumberFormatException e) {
+            System.out.println("Ошибка: Введено некорректное число для ID или количества. Операция прервана.");
+        } catch (IllegalArgumentException e) {
+            System.out.println("Ошибка: Неверный тип движения. Допустимы только IN, OUT или DISCARD. Операция прервана.");
+        }
     }
 
     private void handleMoveList(List<String> args) {
@@ -302,7 +345,6 @@ public class CliRunner {
 
         Instant expiresBefore = null;
 
-        // Парсим флаг --expires-before
         if (args.size() >= 3 && args.get(1).equalsIgnoreCase("--expires-before")) {
             try {
                 expiresBefore = LocalDate.parse(args.get(2)).atStartOfDay(ZoneId.systemDefault()).toInstant();
@@ -323,7 +365,6 @@ public class CliRunner {
         for (Reagent r : reagents) {
             List<ReagentBatch> activeBatches = batchService.listBatches(r.getId(), true);
 
-            // Если задана дата отсечения — фильтруем партии
             if (expiresBefore != null) {
                 final Instant threshold = expiresBefore;
                 activeBatches = activeBatches.stream()
@@ -336,7 +377,6 @@ public class CliRunner {
                 System.out.printf(" %s (ID: %d) — Подходящих партий: %d шт. (Общий остаток: %.2f)\n",
                         r.getName(), r.getId(), activeBatches.size(), totalAmount);
             } else if (expiresBefore == null) {
-                // Выводим "Нет в наличии" только если мы смотрим полный отчет, а не фильтрованный
                 System.out.printf(" %s (ID: %d) — Нет в наличии\n", r.getName(), r.getId());
             }
         }
