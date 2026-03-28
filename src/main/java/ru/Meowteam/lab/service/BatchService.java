@@ -23,7 +23,7 @@ public class BatchService {
     }
 
     public ReagentBatch createBatch(long reagentId, String label, double quantity, BatchUnit unit, String location, Instant expiresAt) {
-        reagentService.getById(reagentId); // Проверка существования реактива
+        reagentService.getById(reagentId);
 
         ReagentBatch batch = new ReagentBatch();
         batch.setReagentId(reagentId);
